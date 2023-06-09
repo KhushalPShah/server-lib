@@ -4,56 +4,38 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"runtime"
 )
 
-type HandlerFunction func(interface{}, context.Context) (interface{}, error)
-
-type Handler struct {
-	inpType  reflect.Type
-	outType  reflect.Type
-	name     string
-	function HandlerFunction
-}
-type Route struct {
-	pattern string
-	handler *Handler
+// todo: Change when middleware support to be added
+type Middleware struct {
 }
 
 type Router struct {
-	routes []*Route
-	// will it have nested Routers ? For Sub-routing ?
+	Router     *Router
+	Routes     []*Route
+	Middleware []*Middleware
 }
 
-func wrapper(fn interface{}) func(interface{}, context.Context) (interface{}, error) {
-	fnValue := reflect.ValueOf(fn)
-
-	return func(i interface{}, ctx context.Context) (interface{}, error) {
-		args := []reflect.Value{
-			reflect.ValueOf(i),
-			reflect.ValueOf(ctx),
-		}
-
-		result := fnValue.Call(args)
-
-		if len(result) == 2 {
-			res := result[0].Interface()
-			err := result[1].Interface()
-
-			if err != nil {
-				return nil, err.(error)
-			}
-
-			return res, nil
-		}
-
-		return nil, fmt.Errorf("Invalid function signature: expected (struct, context.Context) (struct, error)")
+func (r *Router) Query(url string, fn interface{}) *Route {
+	// todo: check if any reserved url like openapi is being used
+	// todo: should I return error?
+	inpType, outType, name, err := validateAndRetrieveHandlerParamType(fn)
+	if err != nil {
+		panic(err)
 	}
+
+	handler := &Handler{inpType, outType, name, fn}
+	// add the logic to validate the function, along with its parameters
+	route := &Route{url, http.MethodGet, handler}
+	r.Routes = append(r.Routes, route)
+	return route
 }
 
-func (r *Router) Register(pattern string, fn interface{}) error {
-
+func (r *Router) Mutation(url string, fn interface{}) error {
+	// todo: check if any reserved url like openapi is being used
 	inpType, outType, name, err := validateAndRetrieveHandlerParamType(fn)
 	if err != nil {
 		fmt.Println(err)
@@ -61,13 +43,12 @@ func (r *Router) Register(pattern string, fn interface{}) error {
 	}
 
 	// convert to a wrapper
-	newFunc := wrapper(fn)
+	// newFunc := wrapper(fn)
 
-	handler := &Handler{inpType, outType, name, newFunc}
+	handler := &Handler{inpType, outType, name, fn}
 	// add the logic to validate the function, along with its parameters
-	route := &Route{pattern, handler}
-	r.routes = append(r.routes, route)
-	fmt.Println("Added 1 route")
+	route := &Route{url, http.MethodPost, handler}
+	r.Routes = append(r.Routes, route)
 	return nil
 }
 
@@ -103,8 +84,8 @@ func validateAndRetrieveInputParamType(fnType reflect.Type) (reflect.Type, error
 	noOfInputParam := fnType.NumIn()
 
 	if noOfInputParam == 2 {
-		if reflect.TypeOf((*context.Context)(nil)).Elem() == fnType.In(1) {
-			return fnType.In(0), nil
+		if reflect.TypeOf((*context.Context)(nil)).Elem() == fnType.In(0) {
+			return fnType.In(1), nil
 		} else {
 			return nil, errors.New("Second input parameter of handler function should be of type context")
 		}
@@ -118,7 +99,12 @@ func validateAndRetrieveOutputParamType(fnType reflect.Type) (reflect.Type, erro
 
 	noOfOutputParam := fnType.NumOut()
 
-	if noOfOutputParam == 2 {
+	if noOfOutputParam == 1 {
+		if reflect.TypeOf((*error)(nil)).Elem() == fnType.Out(0) {
+			return fnType.Out(0), nil
+		}
+		return nil, errors.New("If the output of the function has 1 paramteres, it should of type error")
+	} else if noOfOutputParam == 2 {
 		if reflect.TypeOf((*error)(nil)).Elem() == fnType.Out(1) {
 			return fnType.Out(0), nil
 		}
@@ -126,3 +112,43 @@ func validateAndRetrieveOutputParamType(fnType reflect.Type) (reflect.Type, erro
 	}
 	return nil, errors.New(fmt.Sprintf("Invalid number of output arguments of handler function - Expected : 2, Actual : %v", noOfOutputParam))
 }
+
+// For now, this wrapper is not needed
+// func wrapper(fn interface{}) func(context.Context, interface{}) []interface{} {
+// 	fnValue := reflect.ValueOf(fn)
+
+// 	return func(ctx context.Context, i interface{}) []interface{} {
+// 		args := []reflect.Value{
+// 			reflect.ValueOf(ctx),
+// 			reflect.ValueOf(i),
+// 		}
+
+// 		result := fnValue.Call(args)
+
+// 		if len(result) == 1 {
+// 			err := result[0].Interface()
+// 			return []interface{}{
+// 				err,
+// 			}
+// 		} else if len(result) == 2 {
+// 			res := result[0].Interface()
+// 			err := result[1].Interface()
+
+// 			if err != nil {
+// 				return []interface{}{
+// 					nil,
+// 					err,
+// 				}
+// 			}
+
+// 			return []interface{}{
+// 				res,
+// 				nil,
+// 			}
+// 		}
+
+// 		return []interface{}{
+// 			fmt.Errorf("Invalid function signature: expected (context.Context, struct) (struct, error)"),
+// 		}
+// 	}
+// }
