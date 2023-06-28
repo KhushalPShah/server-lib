@@ -1,116 +1,95 @@
 package main
 
 import (
-	"context"
-	"errors"
-	"fmt"
 	"net/http"
-	"reflect"
-	"runtime"
 )
 
-// todo: Change when middleware support to be added
-type Middleware struct {
-}
-
 type Router struct {
-	Router     *Router
-	Routes     []*Route
-	Middleware []*Middleware
+	name   string
+	routes []*Route
 }
 
-func (r *Router) Query(url string, fn interface{}) *Route {
-	// todo: check if any reserved url like openapi is being used
-	// todo: should I return error?
-	inpType, outType, name, err := validateAndRetrieveHandlerParamType(fn)
-	if err != nil {
-		panic(err)
+// func (r *Router) Query(opId string, fn interface{}) *Route {
+// 	// todo: should I return error?
+// 	inpType, outType, err := validateAndRetrieveHandlerParamType(fn)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+
+// 	handler := &Handler{inpType, outType, fn}
+// 	route := &Route{
+// 		handler: handler,
+// 		routeConfig: &RouteConfig{
+// 			opId:   opId,
+// 			opType: "query",
+// 			method: http.MethodGet,
+// 			url:    "/v1/" + opId,
+// 			jsonSchema: &JSONSchemaForInputAndOutput{
+// 				input:  jsonschema.ReflectFromType(inpType),
+// 				output: jsonschema.ReflectFromType(outType),
+// 			},
+// 		}}
+// 	r.routes = append(r.routes, route)
+// 	return route
+// }
+
+func (r *Router) Query(items ...interface{}) *Route {
+	var operationId string
+	var function interface{}
+	var route *Route
+	// if the Query function is called with operationID
+	if len(items) >= 1 {
+		operationId = items[0].(string)
+		route = &Route{
+			handler: &Handler{},
+			routeConfig: &RouteConfig{
+				opId:       operationId,
+				opType:     "query",
+				method:     http.MethodGet,
+				url:        "/v1/" + operationId,
+				jsonSchema: &JSONSchemaForInputAndOutput{},
+			}}
 	}
 
-	handler := &Handler{inpType, outType, name, fn}
-	// add the logic to validate the function, along with its parameters
-	route := &Route{url, http.MethodGet, handler}
-	r.Routes = append(r.Routes, route)
+	// if the function is called alongwith the Handler fn
+	if len(items) == 2 {
+		function = items[1]
+		route = route.fn(function)
+
+	} else if len(items) < 1 || len(items) > 2 {
+		panic("Illegal number of arguments provided to Query")
+	}
+	r.routes = append(r.routes, route)
 	return route
 }
 
-func (r *Router) Mutation(url string, fn interface{}) error {
-	// todo: check if any reserved url like openapi is being used
-	inpType, outType, name, err := validateAndRetrieveHandlerParamType(fn)
-	if err != nil {
-		fmt.Println(err)
-		return err
+func (r *Router) Mutation(items ...interface{}) *Route {
+	var operationId string
+	var function interface{}
+	var route *Route
+	// if the Query function is called with operationID
+	if len(items) >= 1 {
+		operationId = items[0].(string)
+		route = &Route{
+			handler: &Handler{},
+			routeConfig: &RouteConfig{
+				opId:       operationId,
+				opType:     "mutation",
+				method:     http.MethodPost,
+				url:        "/v1/" + operationId,
+				jsonSchema: &JSONSchemaForInputAndOutput{},
+			}}
 	}
 
-	// convert to a wrapper
-	// newFunc := wrapper(fn)
-
-	handler := &Handler{inpType, outType, name, fn}
-	// add the logic to validate the function, along with its parameters
-	route := &Route{url, http.MethodPost, handler}
-	r.Routes = append(r.Routes, route)
-	return nil
-}
-
-func validateAndRetrieveHandlerParamType(fn interface{}) (reflect.Type, reflect.Type, string, error) {
-
-	fnValue := reflect.ValueOf(fn)
-
-	// check if the type if Func
-	if fnValue.Kind() != reflect.Func {
-		return nil, nil, "", errors.New("Provided handler is not a function")
+	// if the function is called alongwith the Handler fn
+	if len(items) == 2 {
+		function = items[1]
+		route = route.fn(function)
+	} else if len(items) < 1 || len(items) > 2 {
+		panic("Illegal number of arguments provided to Query")
 	}
-
-	// get the name of the function
-	name := runtime.FuncForPC(fnValue.Pointer()).Name()
-
-	// get the function's signature
-	fnType := fnValue.Type()
-
-	inpType, err := validateAndRetrieveInputParamType(fnType)
-	if err != nil {
-		fmt.Println(err)
-		return nil, nil, "", err
-	}
-
-	outType, err := validateAndRetrieveOutputParamType(fnType)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	return inpType, outType, name, nil
-}
-func validateAndRetrieveInputParamType(fnType reflect.Type) (reflect.Type, error) {
-
-	noOfInputParam := fnType.NumIn()
-
-	if noOfInputParam == 2 {
-		if reflect.TypeOf((*context.Context)(nil)).Elem() == fnType.In(0) {
-			return fnType.In(1), nil
-		} else {
-			return nil, errors.New("Second input parameter of handler function should be of type context")
-		}
-	} else {
-		return nil, errors.New(fmt.Sprintf("Invalid number of input arguments - Expected : 2, Actual : %v", noOfInputParam))
-	}
-
-}
-
-func validateAndRetrieveOutputParamType(fnType reflect.Type) (reflect.Type, error) {
-
-	noOfOutputParam := fnType.NumOut()
-
-	if noOfOutputParam == 1 {
-		if reflect.TypeOf((*error)(nil)).Elem() == fnType.Out(0) {
-			return fnType.Out(0), nil
-		}
-		return nil, errors.New("If the output of the function has 1 paramteres, it should of type error")
-	} else if noOfOutputParam == 2 {
-		if reflect.TypeOf((*error)(nil)).Elem() == fnType.Out(1) {
-			return fnType.Out(0), nil
-		}
-		return nil, errors.New("Second output parameter of handler function should be of type error")
-	}
-	return nil, errors.New(fmt.Sprintf("Invalid number of output arguments of handler function - Expected : 2, Actual : %v", noOfOutputParam))
+	r.routes = append(r.routes, route)
+	return route
 }
 
 // For now, this wrapper is not needed

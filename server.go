@@ -13,7 +13,13 @@ import (
 )
 
 type Server struct {
-	Router *Router
+	serverConfig *ServerConfig
+	router       *Router
+}
+
+type ServerConfig struct {
+	name string
+	port int
 }
 
 type RegistrationFunctionSchema struct {
@@ -23,19 +29,22 @@ type RegistrationFunctionSchema struct {
 	EndPoint     string             `json:"endpoint"`
 }
 
-// Creates and returns an empty Server pointer
-func New() *Server {
+// Creates and returns an empty Server, with a basic serverConfig
+func Create(name string) *Server {
+
 	return &Server{
-		Router: &Router{
-			Router:     &Router{},
-			Routes:     []*Route{},
-			Middleware: []*Middleware{},
+		serverConfig: &ServerConfig{
+			name: name,
+			port: 3000,
+		},
+		router: &Router{
+			routes: []*Route{},
 		},
 	}
 }
 
-func (s *Server) GetRouter() *Router {
-	return s.Router
+func (s *Server) Router() *Router {
+	return s.router
 }
 
 func (server *Server) Start() {
@@ -48,11 +57,11 @@ func (server *Server) Start() {
 	chi_router := chi.NewRouter()
 
 	// read all the routes from the router
-	routes := server.Router.Routes
+	routes := server.router.routes
 	for _, route := range routes {
 		newFunc := func(w http.ResponseWriter, r *http.Request) {
 			// Decode the JSON request body into the struct instance
-			structPtr := reflect.New(route.Handler.InpType).Interface()
+			structPtr := reflect.New(route.handler.inpType).Interface()
 			decoder := json.NewDecoder(r.Body)
 			decoder.DisallowUnknownFields()
 			err := decoder.Decode(structPtr)
@@ -64,16 +73,16 @@ func (server *Server) Start() {
 			decodedValue := reflect.ValueOf(structPtr).Elem()
 			decodedType := decodedValue.Type()
 
-			if decodedType != route.Handler.InpType {
+			if decodedType != route.handler.inpType {
 				// Compare the structure of the decoded request with the expected type
-				if !reflect.DeepEqual(decodedType, route.Handler.InpType) {
+				if !reflect.DeepEqual(decodedType, route.handler.inpType) {
 					http.Error(w, "JSON body does not match expected structure", http.StatusBadRequest)
 					return
 				}
 			}
 
 			// Fetching the function from the saved Handler
-			fn := route.Handler.Function
+			fn := route.handler.function
 
 			function := reflect.ValueOf(fn)
 			args := []reflect.Value{
@@ -106,7 +115,7 @@ func (server *Server) Start() {
 				}
 
 				resValue := reflect.ValueOf(res)
-				if resValue.Type().AssignableTo(route.Handler.OutType) {
+				if resValue.Type().AssignableTo(route.handler.outType) {
 					responseJSON, err := json.Marshal(res)
 					if err != nil {
 						w.WriteHeader(http.StatusInternalServerError)
@@ -127,10 +136,10 @@ func (server *Server) Start() {
 				}
 			}
 		}
-		if route.Method == http.MethodGet {
-			chi_router.Get(route.URL, newFunc)
-		} else if route.Method == http.MethodPost {
-			chi_router.Post(route.URL, newFunc)
+		if route.routeConfig.method == http.MethodGet {
+			chi_router.Get(route.routeConfig.url, newFunc)
+		} else if route.routeConfig.method == http.MethodPost {
+			chi_router.Post(route.routeConfig.url, newFunc)
 		}
 	}
 
@@ -172,7 +181,7 @@ func generateOpenAPIDocument(routes []*Route) ([]byte, error) {
 
 	for _, route := range routes {
 
-		jsonInpSchema := jsonschema.ReflectFromType(route.Handler.InpType)
+		jsonInpSchema := route.routeConfig.jsonSchema.input
 
 		jsonObject, err := json.Marshal(jsonInpSchema)
 		if err != nil {
@@ -201,7 +210,7 @@ func generateOpenAPIDocument(routes []*Route) ([]byte, error) {
 		}
 
 		// Add the response object too
-		openAPI.AddOperation(route.URL, route.Method, endpoint)
+		openAPI.AddOperation(route.routeConfig.url, route.routeConfig.method, endpoint)
 	}
 	return openAPI.MarshalJSON()
 }

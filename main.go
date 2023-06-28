@@ -25,12 +25,13 @@ func addTodos(ctx context.Context, input Todo) error {
 }
 
 func main() {
-	s := New()
+	s := Create("myServer")
 
-	router := s.GetRouter()
+	router := s.Router()
 
 	// 1. Generic usage for most use cases
 	// todo :  error handling while creating these routes
+
 	router.Query("/myQuery1", addTodos)
 	// router.Mutation("myQuery2", addTodos)
 
