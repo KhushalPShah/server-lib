@@ -16,11 +16,10 @@ type Route struct {
 
 // (opType: "query" or  opType: "mutation")
 type RouteConfig struct {
-	opId       string
-	opType     string
-	method     string
-	url        string
-	jsonSchema *JSONSchemaForInputAndOutput
+	opId   string
+	opType string
+	method string
+	url    string
 }
 type JSONSchemaForInputAndOutput struct {
 	input  *jsonschema.Schema
@@ -28,28 +27,38 @@ type JSONSchemaForInputAndOutput struct {
 }
 
 type Handler struct {
-	inpType  reflect.Type
-	outType  reflect.Type
-	function interface{}
+	inpType    reflect.Type
+	outType    reflect.Type
+	function   interface{}
+	jsonSchema *JSONSchemaForInputAndOutput
 }
 
-func (r *Route) method(method string) *Route {
+func NewRoute(routeConfig *RouteConfig) (r *Route) {
+	return &Route{
+		handler:     &Handler{},
+		routeConfig: routeConfig,
+	}
+}
+
+func (r *Route) Method(method string) *Route {
 	// todo - check if the method is valid string
 	r.routeConfig.method = method
 	return r
 }
-func (r *Route) url(url string) *Route {
+func (r *Route) URL(url string) *Route {
 	// todo - check for any invalid URL
 	r.routeConfig.url = url
 	return r
 }
 
-func (r *Route) fn(function interface{}) *Route {
+func (r *Route) Fn(function interface{}) *Route {
 	inpType, outType, err := validateAndRetrieveHandlerParamType(function)
 	if err != nil {
 		panic(err)
 	}
-	handler := &Handler{inpType, outType, function}
+	inpJSONSchema := jsonschema.ReflectFromType(inpType)
+	outJSONSchema := jsonschema.ReflectFromType(outType)
+	handler := &Handler{inpType, outType, function, &JSONSchemaForInputAndOutput{inpJSONSchema, outJSONSchema}}
 	r.handler = handler
 	return r
 }
@@ -86,7 +95,7 @@ func validateAndRetrieveInputParamType(fnType reflect.Type) (reflect.Type, error
 		if reflect.TypeOf((*context.Context)(nil)).Elem() == fnType.In(0) {
 			return fnType.In(1), nil
 		} else {
-			return nil, errors.New("Second input parameter of handler function should be of type context")
+			return nil, errors.New("First parameter of handler function should be of type Context.context")
 		}
 	} else {
 		return nil, errors.New(fmt.Sprintf("Invalid number of input arguments - Expected : 2, Actual : %v", noOfInputParam))

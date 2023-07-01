@@ -40,21 +40,21 @@ func (r *Router) Query(items ...interface{}) *Route {
 	// if the Query function is called with operationID
 	if len(items) >= 1 {
 		operationId = items[0].(string)
-		route = &Route{
-			handler: &Handler{},
-			routeConfig: &RouteConfig{
-				opId:       operationId,
-				opType:     "query",
-				method:     http.MethodGet,
-				url:        "/v1/" + operationId,
-				jsonSchema: &JSONSchemaForInputAndOutput{},
-			}}
+
+		// prepare the config.
+		// todo: can be refactored into a prepareConfig func
+		var config RouteConfig
+		config.opId = operationId
+		config.opType = "query"
+		config.method = http.MethodGet
+		config.url = "/v1/" + operationId
+		route = NewRoute(&config)
 	}
 
 	// if the function is called alongwith the Handler fn
 	if len(items) == 2 {
 		function = items[1]
-		route = route.fn(function)
+		route = route.Fn(function)
 
 	} else if len(items) < 1 || len(items) > 2 {
 		panic("Illegal number of arguments provided to Query")
@@ -67,26 +67,23 @@ func (r *Router) Mutation(items ...interface{}) *Route {
 	var operationId string
 	var function interface{}
 	var route *Route
-	// if the Query function is called with operationID
+	// if the Mutation function is called with operationID
 	if len(items) >= 1 {
 		operationId = items[0].(string)
-		route = &Route{
-			handler: &Handler{},
-			routeConfig: &RouteConfig{
-				opId:       operationId,
-				opType:     "mutation",
-				method:     http.MethodPost,
-				url:        "/v1/" + operationId,
-				jsonSchema: &JSONSchemaForInputAndOutput{},
-			}}
+		var config RouteConfig
+		config.opId = operationId
+		config.opType = "mutation"
+		config.method = http.MethodPost
+		config.url = "/v1/" + operationId
+		route = NewRoute(&config)
 	}
 
 	// if the function is called alongwith the Handler fn
 	if len(items) == 2 {
 		function = items[1]
-		route = route.fn(function)
+		route = route.Fn(function)
 	} else if len(items) < 1 || len(items) > 2 {
-		panic("Illegal number of arguments provided to Query")
+		panic("Illegal number of arguments provided to Mutation")
 	}
 	r.routes = append(r.routes, route)
 	return route

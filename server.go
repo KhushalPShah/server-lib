@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -59,9 +58,11 @@ func (server *Server) Start() {
 	// read all the routes from the router
 	routes := server.router.routes
 	for _, route := range routes {
+		structPtr := reflect.New(route.handler.inpType).Interface()
 		newFunc := func(w http.ResponseWriter, r *http.Request) {
 			// Decode the JSON request body into the struct instance
-			structPtr := reflect.New(route.handler.inpType).Interface()
+			// todo: what if the request was Get or Delete ? During such scenarios, we will not get the
+			// data in the body.
 			decoder := json.NewDecoder(r.Body)
 			decoder.DisallowUnknownFields()
 			err := decoder.Decode(structPtr)
@@ -86,7 +87,7 @@ func (server *Server) Start() {
 
 			function := reflect.ValueOf(fn)
 			args := []reflect.Value{
-				reflect.ValueOf(context.TODO()),
+				reflect.ValueOf(r.Context()),
 				reflect.ValueOf(structPtr).Elem(),
 			}
 			result := function.Call(args)
@@ -163,7 +164,8 @@ func (server *Server) Start() {
 			return
 		}
 	}
-	chi_router.Get("/openapi.json", endPointForJSONSchemaFunction)
+	// todo: add a YAML endpoint as well
+	chi_router.Get("/v1/openapi.json", endPointForJSONSchemaFunction)
 
 	http.ListenAndServe(":8080", chi_router)
 }
@@ -181,7 +183,7 @@ func generateOpenAPIDocument(routes []*Route) ([]byte, error) {
 
 	for _, route := range routes {
 
-		jsonInpSchema := route.routeConfig.jsonSchema.input
+		jsonInpSchema := route.handler.jsonSchema.input
 
 		jsonObject, err := json.Marshal(jsonInpSchema)
 		if err != nil {
